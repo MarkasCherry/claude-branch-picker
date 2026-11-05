@@ -1,6 +1,6 @@
 {
   "name": "branch-picker",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "See and switch your git branch above the prompt, with search and PR status",
   "author": { "name": "MarkasCherry" },
   "homepage": "https://github.com/MarkasCherry/claude-branch-picker",

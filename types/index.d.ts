@@ -20,6 +20,14 @@ export type PullRequest = {
   url: string
 }
 
+/** What one line of the desktop branch list draws. */
+export type BranchRowProps = {
+  branch: string
+  isCurrent: boolean
+  /** The branch's PR as text, such as `#2 open`; empty without one. */
+  pr: string
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'branch-picker': {

@@ -1,10 +1,12 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { PullRequest, Repo } from '../types'
+import type { BranchRowProps, PullRequest, Repo } from '../types'
+import { readFocusAnswer } from './click-away'
 
 const GIT_POLL_MS = 5000
 const PR_POLL_MS = 60000
+const CLICK_AWAY_POLL_MS = 400
 const MAX_ROWS = 8
 const SEARCH_KEY = 'branch-search'
 
@@ -153,6 +155,32 @@ async function switchTo($: EngineInterface, branch: string): Promise<void> {
   await refreshGit($)
 }
 
+// The band's id, and whether it has held the keyboard since the list opened.
+let bandId: string | undefined
+let hasHeldKeys = false
+
+/** Closes the list once focus has left the band, as a click elsewhere does. */
+async function closeOnClickAway($: EngineInterface): Promise<void> {
+  if (bandId === undefined || !(await read($, isOpenAtom))) {
+    hasHeldKeys = false
+
+    return
+  }
+
+  let deny: string | undefined
+  try {
+    deny = (await $.ui.focus({ requestId: bandId, key: SEARCH_KEY })).deny
+  } catch (error) {
+    deny = String(error)
+  }
+
+  const answer = readFocusAnswer(deny, hasHeldKeys)
+  hasHeldKeys = answer.hasHeldKeys
+  if (answer.shouldClose) {
+    await closeDropdown($)
+  }
+}
+
 const PR_COLORS = { open: 'success', draft: 'subtle', merged: 'merged', closed: 'error' } as const
 
 export const register: Register = on => {
@@ -167,6 +195,7 @@ export const register: Register = on => {
     // Catches a switch made anywhere else, such as a terminal.
     $.clock.every(GIT_POLL_MS, () => inBackground(refreshGit($)))
     $.clock.every(PR_POLL_MS, () => inBackground(refreshPrs($)))
+    $.clock.every(CLICK_AWAY_POLL_MS, () => inBackground(closeOnClickAway($)))
 
     return next(e)
   })
@@ -183,22 +212,26 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // Esc, or moving off the band, closes the dropdown as any dropdown closes.
-  on('ui.focus', async ($, e, next) => {
-    if (e.component === 'AbovePrompt' && e.element === undefined && (await read($, isOpenAtom))) {
-      await closeDropdown($)
+  on('ui.message', async ($, e, next) => {
+    const repo = await read($, repoAtom)
+    const branch = (e.data as { branch?: unknown } | null)?.branch
+    if (typeof branch === 'string' && repo?.branches.includes(branch) === true) {
+      await switchTo($, branch)
     }
 
     return next(e)
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    bandId = e.requestId
     const repo = await read($, repoAtom)
     if (e.props.hasSurvey || repo === null || !repo.isRepo) {
       return next(e)
     }
 
-    const { Box, Button, Input, Link, Text } = $.ui.resolve(e)
+    const elements = $.ui.resolve(e)
+    const { Box, Button, Input, Link, Text } = elements
+    const Client = 'Client' in elements ? elements.Client : undefined
     const prs = await read($, prsAtom)
     const isOpen = await read($, isOpenAtom)
     const query = await read($, queryAtom)
@@ -210,9 +243,10 @@ export const register: Register = on => {
     const firstOther = matches.find(branch => branch !== repo.current)
     const pr = prs[repo.current]
     const changes = repo.changedFiles + repo.untrackedFiles
+    const isDesktop = e.surface === 'desktop'
     const chip =
-      e.surface === 'desktop'
-        ? ({ borderStyle: 'round', borderColor: 'promptBorder', paddingX: 1 } as const)
+      isDesktop
+        ? ({ borderStyle: 'single', borderColor: 'promptBorder', paddingX: 1, paddingY: 0, alignItems: 'center' } as const)
         : ({ paddingX: 1 } as const)
 
     return (
@@ -220,11 +254,11 @@ export const register: Register = on => {
         {isOpen && (
           <Box
             flexDirection="column"
-            alignSelf="flex-start"
-            width={Math.min(60, e.props.bodyColumns)}
             borderStyle="round"
             borderColor="promptBorder"
             paddingX={1}
+            paddingY={isDesktop ? 'sm' : 0}
+            rowGap={isDesktop ? 'sm' : 0}
             marginBottom={1}
           >
             <Input
@@ -243,19 +277,26 @@ export const register: Register = on => {
             {matches.slice(0, MAX_ROWS).map(branch => {
               const rowPr = prs[branch]
               const isCurrent = branch === repo.current
+              const prText = rowPr === undefined ? '' : `#${rowPr.number} ${rowPr.state}`
+
+              if (Client !== undefined && isDesktop) {
+                const row: BranchRowProps = { branch, isCurrent, pr: prText }
+
+                return (
+                  <Client key={`row:${branch}`} module="./branch-row.tsx" props={row} width="100%" />
+                )
+              }
 
               return (
-                <Button key={`branch:${branch}`} plain onPress={() => switchTo($, branch)}>
-                  <Text color={isCurrent ? 'suggestion' : undefined} bold={isCurrent}>
-                    {isCurrent ? '✓ ' : '  '}
-                    {branch}
-                  </Text>
-                  {rowPr !== undefined && (
-                    <Text dimColor>
-                      {'  '}#{rowPr.number} {rowPr.state}
+                <Box flexDirection="row" justifyContent="space-between" columnGap={2}>
+                  <Button key={`branch:${branch}`} plain onPress={() => switchTo($, branch)}>
+                    <Text color={isCurrent ? 'suggestion' : undefined} bold={isCurrent}>
+                      {isCurrent ? '✓ ' : '  '}
+                      {branch}
                     </Text>
-                  )}
-                </Button>
+                  </Button>
+                  {prText !== '' && <Text dimColor>{prText}</Text>}
+                </Box>
               )
             })}
             {matches.length > MAX_ROWS && (
@@ -267,8 +308,8 @@ export const register: Register = on => {
             )}
           </Box>
         )}
-        <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
-          <Box {...chip}>
+        <Box flexDirection="row" flexWrap="wrap" alignItems="stretch" columnGap={1}>
+          <Box {...chip} flexGrow={1} flexShrink={1}>
             <Text dimColor wrap="truncate-start">
               {repo.folder}
             </Text>

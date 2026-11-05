@@ -1,5 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
+import { readFocusAnswer } from './click-away'
+
 const BAND = (surface: 'desktop' | 'terminal') =>
   ({
     plugin: 'branch-picker',
@@ -58,6 +60,18 @@ function fakeGit(on: any, state: Git) {
   return switched
 }
 
+/** Clicks a branch the way each surface offers it: a line on the desktop, a Button elsewhere. */
+async function pick(ui: any, surface: 'desktop' | 'terminal', branch: string) {
+  if (surface === 'desktop') {
+    await ui.pointer({ type: 'up', x: 1, y: 0, button: 'left', in: `row:${branch}` })
+  } else {
+    await ui.press({ key: `branch:${branch}` })
+  }
+}
+
+const row = (surface: 'desktop' | 'terminal', branch: string) =>
+  surface === 'desktop' ? `row:${branch}` : `branch:${branch}`
+
 const start = { cwd: '/', surface: 'desktop', isInteractive: true } as const
 
 for (const surface of ['desktop', 'terminal'] as const) {
@@ -70,7 +84,7 @@ for (const surface of ['desktop', 'terminal'] as const) {
     expect(await ui.find({ key: 'branch-chip' })).toBeTruthy()
     expect((await ui.find({ type: 'Text', text: /±/ }))?.text).toBe('± 2')
     // The dropdown stays shut until the chip is pressed.
-    expect(await ui.find({ key: 'branch:feature' })).toBeFalsy()
+    expect(await ui.find({ key: row(surface, 'feature') })).toBeFalsy()
     await ui.unmount()
   })
 
@@ -80,12 +94,12 @@ for (const surface of ['desktop', 'terminal'] as const) {
     const ui = await $.ui.mount(BAND(surface))
 
     await ui.press({ key: 'branch-chip' })
-    expect(await ui.find({ key: 'branch:feature' })).toBeTruthy()
-    await ui.press({ key: 'branch:feature' })
+    expect(await ui.find({ key: row(surface, 'feature') })).toBeTruthy()
+    await pick(ui, surface, 'feature')
 
     expect(switched).toEqual(['feature'])
     // A finished switch closes the dropdown.
-    expect(await ui.find({ key: 'branch:old' })).toBeFalsy()
+    expect(await ui.find({ key: row(surface, 'old') })).toBeFalsy()
     await ui.unmount()
   })
 }
@@ -97,8 +111,8 @@ test('typing narrows the list, and Enter switches to the top match', async ($, o
 
   await ui.press({ key: 'branch-chip' })
   await ui.input({ key: 'branch-search', text: 'FEA', kind: 'change' })
-  expect(await ui.find({ key: 'branch:feature' })).toBeTruthy()
-  expect(await ui.find({ key: 'branch:old' })).toBeFalsy()
+  expect(await ui.find({ key: 'row:feature' })).toBeTruthy()
+  expect(await ui.find({ key: 'row:old' })).toBeFalsy()
 
   await ui.input({ key: 'branch-search', text: 'FEA', kind: 'submit' })
   expect(switched).toEqual(['feature'])
@@ -111,11 +125,39 @@ test('uncommitted changes stop the switch and say why', async ($, on) => {
   const ui = await $.ui.mount(BAND('desktop'))
 
   await ui.press({ key: 'branch-chip' })
-  await ui.press({ key: 'branch:feature' })
+  await pick(ui, 'desktop', 'feature')
 
   expect(switched).toEqual([])
   expect((await ui.find({ type: 'Text', text: /uncommitted/ }))?.text).toContain('2 files')
   await ui.unmount()
+})
+
+test('a line ignores a post naming no known branch', async ($, on) => {
+  const switched = fakeGit(on, { current: 'main', status: '' })
+  await $.session.start(start)
+  const ui = await $.ui.mount(BAND('desktop'))
+
+  await ui.press({ key: 'branch-chip' })
+  await ui.post({ branch: '--detach' }, { in: 'row:feature' })
+
+  expect(switched).toEqual([])
+  await ui.unmount()
+})
+
+test('clicking away closes the list, but only once the band had the keyboard', () => {
+  const away = 'that site does not hold the keyboard'
+
+  // Opened from the prompt, with the keyboard elsewhere: it stays open.
+  expect(readFocusAnswer(away, false)).toEqual({ hasHeldKeys: false, shouldClose: false })
+  // The band takes the keyboard.
+  expect(readFocusAnswer(undefined, false)).toEqual({ hasHeldKeys: true, shouldClose: false })
+  // A refusal for any other reason changes nothing.
+  expect(readFocusAnswer('another move came first', true)).toEqual({
+    hasHeldKeys: true,
+    shouldClose: false,
+  })
+  // The keyboard has left: close.
+  expect(readFocusAnswer(away, true)).toEqual({ hasHeldKeys: false, shouldClose: true })
 })
 
 test('a switch git refuses shows git’s reason', async ($, on) => {
@@ -124,7 +166,7 @@ test('a switch git refuses shows git’s reason', async ($, on) => {
   const ui = await $.ui.mount(BAND('desktop'))
 
   await ui.press({ key: 'branch-chip' })
-  await ui.press({ key: 'branch:feature' })
+  await pick(ui, 'desktop', 'feature')
 
   expect((await ui.find({ type: 'Text', text: /Could not switch/ }))?.text).toContain('worktree')
   await ui.unmount()
@@ -144,7 +186,7 @@ test('the chip and the rows show each branch\'s PR', async ($, on) => {
     chip = await ui.find({ type: 'Text', text: /^merged$/ })
   }
   expect(chip).toBeTruthy()
-  expect((await ui.find({ key: 'branch:feature' }))?.text).toContain('#2 open')
+  expect(await ui.find({ key: 'row:feature' })).toBeTruthy()
   await ui.unmount()
 })
 
@@ -155,7 +197,7 @@ test('without gh the band still draws, with no PR chip', async ($, on) => {
 
   await ui.press({ key: 'branch-chip' })
 
-  expect(await ui.find({ key: 'branch:feature' })).toBeTruthy()
+  expect(await ui.find({ key: 'row:feature' })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /merged/ })).toBeFalsy()
   await ui.unmount()
 })

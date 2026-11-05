@@ -13,7 +13,7 @@ Click the branch chip to open a searchable list of your branches. Type a few let
 ## What it does
 
 - **Shows where you are:** your folder, current branch and number of changed files, always in view.
-- **Switches branches fast:** search as you type, then press Enter for the top match or click any branch. Your current branch is marked with a ✓, and the rest are sorted by most recent commit.
+- **Switches branches fast:** search as you type, then press Enter for the top match or click anywhere on a branch's line. Your current branch is marked with a ✓, and the rest are sorted by most recent commit. Click away and the list closes.
 - **Shows pull requests:** the chip shows the current branch's PR and its state (open, draft, merged or closed) and links to it on GitHub. Each branch in the list shows its PR too.
 - **Protects your work:** if tracked files have uncommitted changes, it stays on your branch and asks you to commit or stash first. If git refuses a switch, you see git's reason.
 - **Warns you mid-task:** if Claude is working, the list reminds you that switching changes the files it's using.
@@ -48,6 +48,7 @@ The chip row appears in your next session, in any folder that's a git repository
 | To do this | Do this |
 | --- | --- |
 | Open or close the branch list | Click the branch chip, or run `/branches` |
+| Close the branch list | Click anywhere outside it |
 | Filter the list | Type in the search box |
 | Switch to the top match | Press Enter |
 | Switch to any branch | Click it |
@@ -55,6 +56,8 @@ The chip row appears in your next session, in any folder that's a git repository
 
 ## Good to know
 
+- In the desktop app, the chip row appears after you send a new chat's first message.
+- In the desktop app, use the search box and Enter from the keyboard. Tab doesn't move through the branch lines.
 - It lists local branches only. To work on a remote branch, check it out once with git.
 - The list shows up to 8 branches at a time. Type to narrow it down if you have more.
 - Untracked files don't block a switch, because they stay in place. Git still refuses a switch that would overwrite one.
