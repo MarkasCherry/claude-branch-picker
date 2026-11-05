@@ -1,0 +1,12 @@
+{
+  "name": "claude-branch-picker",
+  "description": "Branch Picker: see and switch your git branch above the Claude Code prompt",
+  "owner": { "name": "MarkasCherry" },
+  "plugins": [
+    {
+      "name": "branch-picker",
+      "source": "./",
+      "description": "See and switch your git branch above the prompt, with search and PR status"
+    }
+  ]
+}
